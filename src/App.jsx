@@ -42,7 +42,7 @@ function App() {
         totalDays: result.totalDays
       });
 
-      // Mostrar mensaje de éxito
+      // Mostrar mensaje de éxito y luego hacer scroll al cronograma
       Swal.fire({
         title: '✅ Cronograma Generado Exitosamente',
         text: 'El cronograma de turnos ha sido creado correctamente.',
@@ -51,15 +51,11 @@ function App() {
         confirmButtonColor: '#10b981',
         timer: 2000,
         timerProgressBar: true
+      }).then(() => {
+        setTimeout(() => {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 200);
       });
-
-      // Desplazar a resultados
-      setTimeout(() => {
-        const scheduleElement = document.querySelector('.schedule-container');
-        if (scheduleElement) {
-          scheduleElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 100);
     } catch (error) {
       console.error('Error generating schedule:', error);
       Swal.fire({
@@ -105,13 +101,16 @@ function App() {
       )}
 
       {/* Pie de página */}
-      <footer style={{
-        textAlign: 'center',
-        marginTop: 'var(--spacing-2xl)',
-        padding: 'var(--spacing-xl)',
-        color: 'var(--color-text-muted)',
-        fontSize: '0.875rem'
-      }}>
+      <footer
+        id="footer"
+        style={{
+          textAlign: 'center',
+          marginTop: 'var(--spacing-2xl)',
+          padding: 'var(--spacing-xl)',
+          color: 'var(--color-text-muted)',
+          fontSize: '0.875rem'
+        }}
+      >
         <p style={{ marginTop: 'var(--spacing-sm)' }}>
           Desarrollado con React.js
         </p>

@@ -79,7 +79,7 @@ const ScheduleTable = ({ schedule, validation }) => {
     };
 
     return (
-        <div className="card">
+        <div className="card" id="cronograma-generado">
             <h2 className="card-title">Cronograma Generado</h2>
 
             <div className="schedule-container">
