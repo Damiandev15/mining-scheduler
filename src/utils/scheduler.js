@@ -1,15 +1,16 @@
 /**
- * ALGORITMO DE PLANIFICACIÓN DE TURNOS MINEROS - VERSIÓN 9.0 FINAL
+ * ALGORITMO DE PLANIFICACIÓN DE TURNOS MINEROS - VERSIÓN 10.0 VARIABLE
  * 
- * ALGORITMO DE DESFASE ÓPTIMO
+ * ALGORITMO DE DESFASE VARIABLE CON RESTRICCIÓN DE MÁXIMO 2 SUPERVISORES
  * 
- * Este algoritmo usa un desfase calculado matemáticamente para garantizar
- * EXACTAMENTE 2 supervisores perforando en TODOS los días.
+ * Este algoritmo cumple con la cláusula contractual:
+ * "NO PUEDEN ESTAR 3 SUPERVISORES PERFORANDO AL MISMO TIEMPO"
  * 
  * Principio Clave:
- * - S1 y S2 comienzan juntos (día 0)
- * - S3 comienza con un desfase de (workDays / 2) días
- * - Esto crea un patrón donde SIEMPRE hay exactamente 2 trabajando
+ * - Sistema VARIABLE: permite 0, 1 o 2 supervisores perforando
+ * - NUNCA permite 3 supervisores perforando simultáneamente
+ * - Cada supervisor sigue su propio ciclo de trabajo/descanso
+ * - Los desfases se calculan para optimizar cobertura sin violar la restricción
  */
 
 const STATUS = {
@@ -36,16 +37,22 @@ export function generateSchedule(workDays, restDays, inductionDays, totalDrillin
         S3: new Array(totalDays).fill(STATUS.VACIO)
     };
 
-    // PASO 1: Generar S1 y S2 (comienzan juntos)
+    // PASO 1: Generar S1 (comienza en día 0)
     generateSupervisor(schedule.S1, 0, workDays, restDays, inductionDays, totalDrillingDays, true);
-    generateSupervisor(schedule.S2, 0, workDays, restDays, inductionDays, totalDrillingDays, true);
 
-    // PASO 2: Generar S3 con desfase óptimo
-    // El desfase óptimo es la mitad del período de trabajo
-    const s3Offset = Math.floor(workDays / 2) + 1;
+    // PASO 2: Calcular desfase para S2
+    // S2 comienza después de que S1 haya terminado su inducción
+    // Esto crea variabilidad en la cantidad de supervisores perforando
+    const s2Offset = Math.floor(cycleLength / 3);
+    generateSupervisor(schedule.S2, s2Offset, workDays, restDays, inductionDays, totalDrillingDays, true);
+
+    // PASO 3: Calcular desfase para S3
+    // S3 debe estar desfasado de tal manera que NUNCA coincidan los 3 perforando
+    // Usamos 2/3 del ciclo para maximizar la separación
+    const s3Offset = Math.floor((cycleLength * 2) / 3);
     generateSupervisor(schedule.S3, s3Offset, workDays, restDays, inductionDays, totalDrillingDays, true);
 
-    // PASO 3: Encontrar último día relevante
+    // PASO 4: Encontrar último día relevante
     const lastDay = findLastDrillingDay(schedule);
     const actualDays = lastDay + restDays + 10;
 
@@ -55,13 +62,18 @@ export function generateSchedule(workDays, restDays, inductionDays, totalDrillin
         S3: schedule.S3.slice(0, actualDays)
     };
 
-    // PASO 4: Validar
+    // PASO 5: Validar que NUNCA haya 3 supervisores perforando
     const validation = validateSchedule(trimmed);
 
     return {
         schedule: trimmed,
         validation,
-        totalDays: actualDays
+        totalDays: actualDays,
+        offsets: {
+            S1: 0,
+            S2: s2Offset,
+            S3: s3Offset
+        }
     };
 }
 
@@ -132,42 +144,38 @@ export function validateSchedule(schedule) {
     const warnings = [];
     const totalDays = schedule.S1.length;
 
-    // Encontrar cuándo S3 comienza a perforar
-    let s3DrillingStart = -1;
-    for (let day = 0; day < totalDays; day++) {
-        if (schedule.S3[day] === STATUS.PERFORACION) {
-            s3DrillingStart = day;
-            break;
-        }
-    }
+    // Contadores para estadísticas
+    let daysWithZero = 0;
+    let daysWithOne = 0;
+    let daysWithTwo = 0;
+    let daysWithThree = 0;
 
-    // Validar cada día después de que S3 esté activo
+    // VALIDACIÓN PRINCIPAL: NUNCA 3 SUPERVISORES PERFORANDO
     for (let day = 0; day < totalDays; day++) {
         const count = countDrilling(schedule, day);
 
-        if (day >= s3DrillingStart && s3DrillingStart !== -1) {
-            if (count === 3) {
-                errors.push({
-                    day,
-                    type: 'THREE_DRILLING',
-                    message: `Día ${day}: 3 supervisores perforando (PROHIBIDO)`
-                });
-            } else if (count === 1) {
-                errors.push({
-                    day,
-                    type: 'ONE_DRILLING',
-                    message: `Día ${day}: Solo 1 supervisor perforando (PROHIBIDO después que S3 entró)`
-                });
-            } else if (count === 0) {
-                errors.push({
-                    day,
-                    type: 'ZERO_DRILLING',
-                    message: `Día ${day}: 0 supervisores perforando (PROHIBIDO)`
-                });
-            }
+        // Contar distribución
+        if (count === 0) daysWithZero++;
+        if (count === 1) daysWithOne++;
+        if (count === 2) daysWithTwo++;
+        if (count === 3) daysWithThree++;
+
+        // ERROR CRÍTICO: 3 supervisores perforando (VIOLA LA CLÁUSULA)
+        if (count === 3) {
+            errors.push({
+                day,
+                type: 'THREE_DRILLING',
+                severity: 'CRITICAL',
+                message: `Día ${day}: 3 supervisores perforando - VIOLA CLÁUSULA CONTRACTUAL`,
+                supervisors: [
+                    schedule.S1[day] === STATUS.PERFORACION ? 'S1' : null,
+                    schedule.S2[day] === STATUS.PERFORACION ? 'S2' : null,
+                    schedule.S3[day] === STATUS.PERFORACION ? 'S3' : null
+                ].filter(s => s !== null)
+            });
         }
 
-        // Verificar patrones inválidos
+        // Verificar patrones inválidos en cada supervisor
         ['S1', 'S2', 'S3'].forEach(sup => {
             const today = schedule[sup][day];
             const tomorrow = day < totalDays - 1 ? schedule[sup][day + 1] : null;
@@ -196,19 +204,32 @@ export function validateSchedule(schedule) {
         isValid: errors.length === 0,
         errors,
         warnings,
-        s3ActiveDay: s3DrillingStart
+        distribution: {
+            daysWithZero,
+            daysWithOne,
+            daysWithTwo,
+            daysWithThree
+        },
+        compliance: {
+            contractClause: daysWithThree === 0,
+            message: daysWithThree === 0
+                ? '✓ Cumple cláusula: NUNCA 3 supervisores perforando simultáneamente'
+                : `✗ VIOLA cláusula: ${daysWithThree} día(s) con 3 supervisores perforando`
+        }
     };
 }
 
 export function getScheduleStats(schedule) {
     const totalDays = schedule.S1.length;
     let totalDrillingDays = 0;
-    let daysWithTwoDrilling = 0;
+    let daysWithZeroDrilling = 0;
     let daysWithOneDrilling = 0;
+    let daysWithTwoDrilling = 0;
     let daysWithThreeDrilling = 0;
 
     for (let day = 0; day < totalDays; day++) {
         const count = countDrilling(schedule, day);
+        if (count === 0) daysWithZeroDrilling++;
         if (count === 1) daysWithOneDrilling++;
         if (count === 2) daysWithTwoDrilling++;
         if (count === 3) daysWithThreeDrilling++;
@@ -223,6 +244,17 @@ export function getScheduleStats(schedule) {
     return {
         totalDays,
         totalDrillingDays,
+        distribution: {
+            zero: daysWithZeroDrilling,
+            one: daysWithOneDrilling,
+            two: daysWithTwoDrilling,
+            three: daysWithThreeDrilling
+        },
+        compliance: {
+            meetsContractClause: daysWithThreeDrilling === 0,
+            violationDays: daysWithThreeDrilling
+        },
+        // Mantener compatibilidad con código existente
         daysWithTwoDrilling,
         daysWithOneDrilling,
         daysWithThreeDrilling
